@@ -84,6 +84,7 @@ func parseConfigContent(ctx context.Context, content []byte, debug bool, configO
 		if err != nil {
 			return nil, fmt.Errorf("[XrayJsonParser] %w", err)
 		}
+		disableTCPFastOpen(v2ray)
 		return patchConfigOptions(ctx, v2ray, "XrayJsonParser", configOpt)
 	}
 	if options, err := parseShareLinks(ctx, content, configOpt); err == nil {
@@ -98,7 +99,26 @@ func parseShareLinks(ctx context.Context, content []byte, configOpt *HiddifyOpti
 	if err != nil {
 		return nil, fmt.Errorf("unable to determine config format")
 	}
+	disableTCPFastOpen(v2ray)
 	return patchConfigOptions(ctx, v2ray, "V2rayParser", configOpt)
+}
+
+// disableTCPFastOpen turns off TCP Fast Open on outbounds made from share links. ray2sing turns it on
+// for every link without a fragment, but many servers and networks drop TFO SYNs, so those configs
+// never connect. A share link has no way to ask for TFO, so it is never what the link meant.
+func disableTCPFastOpen(options *option.Options) {
+	if options == nil {
+		return
+	}
+	for _, out := range options.Outbounds {
+		if opts, ok := out.Options.(option.DialerOptionsWrapper); ok {
+			dialer := opts.TakeDialerOptions()
+			if dialer.TCPFastOpen {
+				dialer.TCPFastOpen = false
+				opts.ReplaceDialerOptions(dialer)
+			}
+		}
+	}
 }
 
 // isYAMLConfig reports YAML that can be a config: a map, or a list of maps. A WireGuard conf
